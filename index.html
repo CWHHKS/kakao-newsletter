@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📰 뉴스레터 AI 요약기</title>
+<meta name="description" content="신문/뉴스레터 이미지를 AI가 자동으로 읽고 정형 포맷으로 요약합니다.">
+<link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --card2: #22263a;
+    --accent: #4f8ef7;
+    --accent2: #7c3aed;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --text: #e8eaf0;
+    --muted: #6b7280;
+    --border: #2d3148;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Pretendard', -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  header {
+    background: linear-gradient(135deg, #1a1d27, #22263a);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 32px;
+    display: flex; align-items: center; gap: 16px;
+    position: sticky; top: 0; z-index: 100;
+  }
+  header .logo { font-size: 1.6rem; }
+  header h1 { font-size: 1.2rem; font-weight: 700; }
+  header p { font-size: 0.78rem; color: var(--muted); }
+  .api-badge {
+    margin-left: auto; display: flex; align-items: center; gap: 8px;
+    font-size: 0.75rem;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--red); animation: pulse 2s infinite; }
+  .dot.ok { background: var(--green); }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.45} }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 28px 20px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media(max-width:860px){ .grid{ grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 22px;
+  }
+  .card-title {
+    font-size: 0.8rem; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .06em;
+    margin-bottom: 14px; display: flex; align-items: center; gap: 7px;
+  }
+
+  /* 업로드 */
+  .drop-zone {
+    border: 2px dashed var(--border); border-radius: 12px;
+    padding: 44px 20px; text-align: center; cursor: pointer;
+    transition: all .2s; background: var(--card2);
+  }
+  .drop-zone:hover, .drop-zone.over { border-color: var(--accent); background: rgba(79,142,247,.07); }
+  .drop-zone .ico { font-size: 2.8rem; margin-bottom: 10px; }
+  .drop-zone h3 { font-size: .95rem; font-weight: 600; margin-bottom: 5px; }
+  .drop-zone p { font-size: .8rem; color: var(--muted); }
+  #fileInput { display: none; }
+  #preview-wrap { margin-top: 14px; display: none; }
+  #preview-img { width: 100%; border-radius: 9px; border: 1px solid var(--border); }
+  #file-info { margin-top: 6px; font-size: .78rem; color: var(--muted); }
+
+  /* 버튼 */
+  .btn {
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    padding: 12px 20px; border-radius: 9px; font-size: .88rem; font-weight: 600;
+    cursor: pointer; border: none; transition: all .18s; width: 100%; margin-top: 12px;
+  }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+  .btn-primary:hover { opacity: .86; transform: translateY(-1px); }
+  .btn-secondary { background: var(--card2); border: 1px solid var(--border); color: var(--text); }
+  .btn-secondary:hover { border-color: var(--accent); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; transform: none !important; }
+  .btn-copy { background: rgba(34,197,94,.12); border: 1px solid var(--green); color: var(--green); }
+  .btn-copy:hover { background: rgba(34,197,94,.22); }
+  .btn-sm { width: auto; padding: 6px 14px; font-size: .78rem; margin-top: 0; }
+
+  /* 결과 */
+  #result-box {
+    background: var(--card2); border-radius: 10px; padding: 18px;
+    min-height: 280px; font-size: .84rem; line-height: 1.78;
+    white-space: pre-line; border: 1px solid var(--border);
+    overflow-y: auto; max-height: 580px; color: var(--text);
+  }
+  #result-box.placeholder { color: var(--muted); font-style: italic; }
+
+  /* API 키 모달 */
+  .modal-bg {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.75); z-index: 200;
+    align-items: center; justify-content: center;
+  }
+  .modal-bg.show { display: flex; }
+  .modal {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 28px; width: 440px; max-width: 90vw;
+  }
+  .modal h2 { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+  .modal p { font-size: .82rem; color: var(--muted); margin-bottom: 16px; line-height: 1.6; }
+  .modal input {
+    width: 100%; padding: 10px 14px;
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: .875rem; margin-bottom: 12px;
+  }
+  .modal input:focus { outline: none; border-color: var(--accent); }
+
+  /* 로더 */
+  #loader { display: none; flex-direction: column; align-items: center; gap: 14px; padding: 40px; }
+  #loader.show { display: flex; }
+  .spinner {
+    width: 38px; height: 38px; border-radius: 50%;
+    border: 3px solid var(--border); border-top-color: var(--accent);
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 토스트 */
+  #toast {
+    position: fixed; bottom: 22px; right: 22px;
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: 9px; padding: 12px 18px; font-size: .84rem;
+    opacity: 0; pointer-events: none; transform: translateY(10px);
+    transition: all .25s; z-index: 999;
+  }
+  #toast.show { opacity: 1; transform: translateY(0); }
+  #toast.ok { border-color: var(--green); }
+  #toast.err { border-color: var(--red); }
+
+  /* 사용 안내 */
+  .guide {
+    background: rgba(79,142,247,.08); border: 1px solid rgba(79,142,247,.2);
+    border-radius: 10px; padding: 16px; margin-bottom: 20px; font-size: .82rem;
+    line-height: 1.7; color: var(--muted);
+  }
+  .guide strong { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">📰</div>
+  <div>
+    <h1>뉴스레터 AI 요약기</h1>
+    <p>신문·뉴스레터 이미지 → AI 정형 포맷 자동 요약</p>
+  </div>
+  <div class="api-badge">
+    <div class="dot" id="api-dot"></div>
+    <span id="api-txt" style="color:var(--muted)">키 미설정</span>
+    <button class="btn btn-secondary btn-sm" style="margin-top:0;" onclick="openKeyModal()">🔑 API 키 설정</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="guide">
+    <strong>사용 방법</strong>: ① API 키 설정 → ② 이미지 업로드 → ③ AI 요약 생성 → ④ 결과 복사 → ⑤ 카카오톡 붙여넣기<br>
+    API 키는 브라우저에 안전하게 저장됩니다 (서버 전송 없음). 
+    <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent);">Google AI Studio</a>에서 무료 발급 가능.
+  </div>
+
+  <div class="grid">
+
+    <!-- 왼쪽: 업로드 -->
+    <div class="card">
+      <div class="card-title">📤 이미지 업로드</div>
+
+      <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+        <div class="ico">🗞️</div>
+        <h3>클릭하거나 이미지를 드래그하세요</h3>
+        <p>JPG, PNG · 신문/뉴스레터 스캔 이미지</p>
+        <input type="file" id="fileInput" accept="image/*" onchange="handleFile(event)">
+      </div>
+
+      <div id="preview-wrap">
+        <img id="preview-img" src="" alt="미리보기">
+        <div id="file-info"></div>
+      </div>
+
+      <button class="btn btn-primary" id="analyze-btn" onclick="analyzeImage()" disabled>
+        ✨ AI 요약 생성
+      </button>
+    </div>
+
+    <!-- 오른쪽: 결과 -->
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <span>📋 요약 결과</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="copyResult()">📋 전체 복사</button>
+        </div>
+      </div>
+
+      <div id="loader">
+        <div class="spinner"></div>
+        <div style="color:var(--muted);font-size:.85rem;">Gemini AI가 이미지를 분석 중입니다…</div>
+      </div>
+
+      <div id="result-box" class="placeholder">이미지를 업로드하고 [AI 요약 생성]을 눌러주세요.
+
+─────────────────────────────
+생성 포맷 예시:
+
+&lt;2026년 3월20일 뉴스&gt;
+
+1. [경제/에너지] 원유 수급 비상…
+2. [증권/지수] 코스피 급등…
+
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+
+1. [경제/에너지] 원유 수급 비상…
+① 핵심: 정유업계 러시아산 도입 검토.
+② 포인트: 공급 충격은 물가로 전이.
+③ 시사점: 유가 변동성 구간 리스크 관리 필요.
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- API 키 모달 -->
+<div class="modal-bg" id="keyModal">
+  <div class="modal">
+    <h2>🔑 Gemini API 키 설정</h2>
+    <p>
+      API 키는 브라우저의 localStorage에만 저장되며 외부 서버로 전송되지 않습니다.<br>
+      <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent);">Google AI Studio</a>에서 무료로 발급받을 수 있습니다.
+    </p>
+    <input type="password" id="key-input" placeholder="AIzaSy...">
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-primary" style="flex:1;margin-top:0;" onclick="saveKey()">💾 저장</button>
+      <button class="btn btn-secondary" style="flex:1;margin-top:0;" onclick="closeKeyModal()">취소</button>
+    </div>
+  </div>
+</div>
+
+<!-- 토스트 -->
+<div id="toast"></div>
+
+<script>
+// ── Gemini API 프롬프트 ──────────────────────────────────
+const SUMMARY_PROMPT = `당신은 경제·시사 뉴스레터 전문 에디터입니다.
+이미지는 신문/뉴스레터 스캔본입니다. 아래 형식을 정확히 따르세요.
+
+[출력 형식]
+
+<YYYY년 M월D일 뉴스>
+
+1. [분야/세부분야] 헤드라인 1줄 요약
+2. [분야/세부분야] 헤드라인 1줄 요약
+(기사 전체 목차)
+
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+
+1. [분야/세부분야] 헤드라인 1줄 요약
+① 핵심: 핵심 사실 1~2문장.
+② 포인트: 주목할 시장·경제적 포인트 1~2문장.
+③ 시사점: 행동·판단에 참고할 인사이트 1~2문장.
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+
+(모든 기사를 빠짐없이 반복)
+
+[규칙]
+- 날짜는 이미지에서 추출, 없으면 오늘 날짜
+- 분야: [정치][경제][금융][증권][기업][국제][생활][기술] + /세부
+- ▔ 구분선(25개)은 각 기사 아래 반드시 삽입
+- 목차(번호 목록)와 본문(①②③) 두 파트 모두 작성
+- 한국어. 길이 제한 없음 — 기사 전부 포함`;
+
+// ── 상태 ────────────────────────────────────────────────
+let currentFile = null;
+let currentResult = "";
+
+function getKey(){ return localStorage.getItem("gemini_api_key") || ""; }
+function updateKeyStatus(){
+  const k = getKey();
+  const dot = document.getElementById("api-dot");
+  const txt = document.getElementById("api-txt");
+  if(k){ dot.className = "dot ok"; txt.textContent = "API 연결됨"; }
+  else { dot.className = "dot"; txt.textContent = "키 미설정"; }
+}
+
+// ── API 키 모달 ──────────────────────────────────────────
+function openKeyModal(){
+  document.getElementById("key-input").value = getKey();
+  document.getElementById("keyModal").classList.add("show");
+}
+function closeKeyModal(){ document.getElementById("keyModal").classList.remove("show"); }
+function saveKey(){
+  const k = document.getElementById("key-input").value.trim();
+  if(!k){ toast("API 키를 입력해주세요.", "err"); return; }
+  localStorage.setItem("gemini_api_key", k);
+  closeKeyModal();
+  updateKeyStatus();
+  toast("✅ API 키 저장됨", "ok");
+}
+
+// ── 파일 처리 ────────────────────────────────────────────
+function handleFile(e){ if(e.target.files[0]) setFile(e.target.files[0]); }
+function setFile(file){
+  currentFile = file;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    document.getElementById("preview-img").src = ev.target.result;
+    document.getElementById("preview-wrap").style.display = "block";
+  };
+  reader.readAsDataURL(file);
+  document.getElementById("file-info").textContent = `${file.name}  (${(file.size/1024).toFixed(0)}KB)`;
+  document.getElementById("analyze-btn").disabled = false;
+  document.getElementById("result-box").className = "placeholder";
+  currentResult = "";
+  toast("이미지 선택됨", "ok");
+}
+
+// 드래그 앤 드롭
+const dz = document.getElementById("dropZone");
+dz.addEventListener("dragover", e=>{ e.preventDefault(); dz.classList.add("over"); });
+dz.addEventListener("dragleave", ()=>dz.classList.remove("over"));
+dz.addEventListener("drop", e=>{
+  e.preventDefault(); dz.classList.remove("over");
+  const f = e.dataTransfer.files[0];
+  if(f && f.type.startsWith("image/")) setFile(f);
+});
+
+// ── Gemini Vision 분석 ────────────────────────────────────
+async function analyzeImage(){
+  const apiKey = getKey();
+  if(!apiKey){ openKeyModal(); return; }
+  if(!currentFile) return;
+
+  const btn = document.getElementById("analyze-btn");
+  const loader = document.getElementById("loader");
+  const box = document.getElementById("result-box");
+  btn.disabled = true;
+  loader.classList.add("show");
+  box.style.display = "none";
+
+  try {
+    // 이미지 → base64
+    const b64 = await fileToBase64(currentFile);
+    const mimeType = currentFile.type || "image/jpeg";
+
+    const body = {
+      contents: [{
+        role: "user",
+        parts: [
+          { text: SUMMARY_PROMPT },
+          { inline_data: { mime_type: mimeType, data: b64 } }
+        ]
+      }],
+      generationConfig: { temperature: 0.4, maxOutputTokens: 8192 }
+    };
+
+    // gemini-2.0-flash-lite 직접 호출
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+
+    if(!res.ok){
+      throw new Error(data.error?.message || "API 오류");
+    }
+
+    currentResult = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    box.style.display = "";
+    box.className = "";
+    box.textContent = currentResult;
+    toast("✅ 요약 완료!", "ok");
+
+  } catch(e){
+    box.style.display = "";
+    box.className = "placeholder";
+    box.textContent = "❌ 오류: " + e.message;
+    toast("분석 실패: " + e.message, "err");
+  }
+
+  loader.classList.remove("show");
+  btn.disabled = false;
+}
+
+// 이미지 → base64 변환
+function fileToBase64(file){
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = e => {
+      // data:image/jpeg;base64,XXX → XXX 부분만 추출
+      const b64 = e.target.result.split(",")[1];
+      resolve(b64);
+    };
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+// ── 결과 복사 ─────────────────────────────────────────────
+function copyResult(){
+  if(!currentResult){ toast("요약 결과가 없습니다.", "err"); return; }
+  navigator.clipboard.writeText(currentResult)
+    .then(() => toast("📋 클립보드에 복사됨! 카카오톡에 Ctrl+V 로 붙여넣기하세요.", "ok"))
+    .catch(() => {
+      // fallback
+      const ta = document.createElement("textarea");
+      ta.value = currentResult;
+      document.body.appendChild(ta);
+      ta.select(); document.execCommand("copy");
+      document.body.removeChild(ta);
+      toast("📋 복사됨!", "ok");
+    });
+}
+
+// ── 토스트 ────────────────────────────────────────────────
+let _tt;
+function toast(msg, type=""){
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = "show " + (type||"");
+  clearTimeout(_tt);
+  _tt = setTimeout(() => el.className = "", 3500);
+}
+
+// ── 초기화 ─────────────────────────────────────────────────
+updateKeyStatus();
+if(!getKey()) setTimeout(openKeyModal, 600);
+</script>
+</body>
+</html>
