@@ -304,7 +304,116 @@
 <div id="toast"></div>
 
 <script>
-// ── AI 프롬프트 v2.0 (최종 확정) ──────────────────────────
+// ── AI 프롬프트 (옵션 A: 2단계 처리) ─────────────────────
+
+// ── [Phase 1] 이미지 → 기사 추출 전용 프롬프트 ──────────────
+// 각 이미지에서 기사만 추출 (번호·추천종목·날짜헤더 불필요)
+const PROMPT_EXTRACT = `당신은 경제·시사 뉴스레터 기사 추출 전문가입니다.
+첨부 이미지(신문/뉴스레터 스캔본)의 모든 기사를 읽고
+번호 없이 아래 형식만으로 출력하세요.
+
+⛔ 금지: 추천 종목 섹션 출력 금지. 날짜 헤더 출력 금지.
+   번호 매기기 금지. 형식 설명·지시문 출력 금지.
+
+각 기사마다 아래 형식으로만 출력:
+
+[분야/세부분야] 기사 제목 (기사 속 핵심 수치·사실 포함한 완전한 문장)
+①핵심: 기사에서 실제 언급된 수치·인물명·기관명·날짜를 포함해 완전한 한 문장으로 작성.
+②포인트: 구체적 데이터·퍼센트·금액·규모를 근거로 시장·경제 포인트를 완전한 한 문장으로 작성.
+③시사점: 투자·생활·판단에 직결되는 구체적 인사이트를 완전한 한 문장으로 작성.
+---
+
+[분야/세부분야] 다음 기사 제목
+①핵심: ...
+②포인트: ...
+③시사점: ...
+---
+
+(이미지 속 모든 기사 동일 형식으로 반복)
+
+✅ ①②③ 반드시 기사 속 실제 수치(%, 원, 달러, 배, 명), 인물명·기관명 포함
+✅ "~하고 있다" "~할 예정이다" 식 막연한 서술 금지
+✅ 이미지의 모든 기사 빠짐없이 추출 / 전체 한국어`;
+
+// ── [Phase 2] 전체 통합·재정리 프롬프트 (텍스트 전용) ────────
+const PROMPT_CONSOLIDATE = `당신은 경제·시사 뉴스레터 전문 에디터입니다.
+아래 [추출된 기사 목록]을 읽고 다음 형식을 한 글자도 변경하지 말고 출력하세요.
+
+⛔ 금지: 지시문·설명·형식 외 텍스트 출력 금지.
+
+오늘 날짜: ${TODAY}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+💰 오늘의 추천 종목 (${TODAY})
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+① 실제 회사명 (종목코드·국내/미국) ★★★
+[참조기사 #번호 · 분야/세부분야]
+→ 추천 핵심 이유 (구체적 수치·사실 포함)
+  근거 두 번째 줄 (수치 포함)
+  근거 세 번째 줄
+  근거 네 번째 줄
+
+② 실제 회사명 (종목코드·국내/미국) ★★★
+[참조기사 #번호 · 분야/세부분야]
+→ 추천 핵심 이유
+  근거 두 번째 줄
+  근거 세 번째 줄
+  근거 네 번째 줄
+
+③ 실제 회사명 (종목코드·국내/미국) ★★☆
+[참조기사 #번호 · 분야/세부분야]
+→ 추천 핵심 이유
+  근거 두 번째 줄
+  근거 세 번째 줄
+  (※ 단기 급등 주의사항 있으면 반드시 기재)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ 본 추천 종목은 오늘의 뉴스 기사를
+   바탕으로 작성된 참고 정보이며,
+   투자의 최종 판단과 책임은
+   반드시 본인에게 있습니다.
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<${TODAY_KO} 뉴스>
+
+1. [분야/세부분야] 기사 제목 (핵심 수치·사실 포함한 완전한 헤드라인)
+2. [분야/세부분야] 기사 제목 (핵심 수치·사실 포함)
+3. [분야/세부분야] 기사 제목 (핵심 수치·사실 포함)
+(아래 기사 목록의 모든 기사를 1번부터 연속 번호로 작성)
+
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+
+1. [분야/세부분야] 위 목차와 동일한 헤드라인
+①핵심: 기사에서 실제 언급된 수치·인물명·기관명·날짜를 포함한 완전한 한 문장.
+②포인트: 구체적 데이터·퍼센트·금액·규모를 근거로 한 완전한 한 문장.
+③시사점: 투자·생활·판단에 직결되는 구체적 인사이트를 완전한 한 문장.
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+
+(이상 동일 형식으로 모든 기사 반복)
+
+[추천 종목 선정 규칙]
+- 아래 모든 기사 중 투자 근거가 명확한 종목 최대 3개
+- 없으면 "오늘 기사에서 명확한 추천 종목 없음" 1줄
+- 반드시 실제 회사명(한글)+종목코드 기재
+- → 설명: 2~4줄, 구체적 수치·사실 포함 멀티라인
+- 별점: ★★★(강력추천) ★★☆(관심) ★☆☆(주의)
+- 단기 급등 종목 ※ 주의 반드시 기재
+
+[전체 작성 규칙]
+- 기사 번호는 1번부터 연속 번호로 부여 (기사 수 = 아래 목록 총합)
+- ①②③ 반드시 실제 수치·인물명·기관명 포함한 완전한 문장
+- 分야태그: [정치][경제][금융][증권][기업][국제][생활][기술]+/세부
+- ▔ 구분선(25자): 모든 기사의 ③시사점 아래 반드시 삽입
+- 전체 한국어 작성
+
+[추출된 기사 목록]
+`;
+
+// 하위 호환용
+const SUMMARY_PROMPT = PROMPT_EXTRACT;
+
+
 const TODAY = (() => {
   const d = new Date();
   const y = d.getFullYear();
@@ -317,120 +426,8 @@ const TODAY_KO = (() => {
   return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일`;
 })();
 
-// ── [프롬프트 A] 첫 번째 이미지용 (추천 종목 + 목차 + 상세) ─
-const PROMPT_STOCKS = `당신은 경제·시사 뉴스레터 전문 에디터입니다.
-첨부된 이미지(신문/뉴스레터 스캔본)의 모든 기사를 읽고
-아래 순서와 형식을 한 글자도 변경하지 말고 그대로 따르세요.
 
-⛔ 절대 금지: [PART 1] [PART 2] [PART 3] 라벨 출력 금지.
-   ▶, 출력 형식, 작성 규칙 등 지시문 출력 금지.
-   아래 출력 형식 외 임의 텍스트 추가 금지.
 
-날짜: 이미지에서 추출. 없으면 오늘(${TODAY}) 사용.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-💰 오늘의 추천 종목 (${TODAY})
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-① 실제 회사명 (종목코드·국내/미국) ★★★
-[참조기사 #번호 · 분야/세부분야]
-→ 추천 이유 핵심 한 줄.
-  추가 근거 한 줄.
-
-② 실제 회사명 (종목코드·국내/미국) ★★★
-[참조기사 #번호 · 분야/세부분야]
-→ 추천 이유 핵심 한 줄.
-  추가 근거 한 줄.
-
-③ 실제 회사명 (종목코드·국내/미국) ★★☆
-[참조기사 #번호 · 분야/세부분야]
-→ 추천 이유 핵심 한 줄.
-  추가 근거 한 줄.
-  (※ 단기 급등 구간 등 주의사항이 있으면 반드시 기재)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ 본 추천 종목은 오늘의 뉴스 기사를
-   바탕으로 작성된 참고 정보이며,
-   투자의 최종 판단과 책임은
-   반드시 본인에게 있습니다.
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-추천 종목 규칙: 기사 근거 명확한 종목만 최대 3개.
-없으면 "오늘 기사에서 명확한 추천 종목 없음" 1줄.
-반드시 실제 회사명(한글)+종목코드 기재.
-별점: ★★★(강력추천) ★★☆(관심) ★☆☆(주의)
-
-<${TODAY_KO} 뉴스>
-
-1. [분야/세부분야] 헤드라인 1줄 요약
-2. [분야/세부분야] 헤드라인 1줄 요약
-3. [분야/세부분야] 헤드라인 1줄 요약
-(이미지 속 기사 수만큼 모두 작성)
-
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
-
-1. [분야/세부분야] 위 목차와 동일한 헤드라인
-①핵심: 이 기사의 핵심 사실을 한 줄로 작성.
-②포인트: 시장·경제·생활에서 주목할 포인트 한 줄.
-③시사점: 독자의 판단·행동에 참고될 인사이트 한 줄.
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
-
-2. [분야/세부분야] 위 목차와 동일한 헤드라인
-①핵심: 한 줄 작성.
-②포인트: 한 줄 작성.
-③시사점: 한 줄 작성.
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
-
-(모든 기사 동일한 형식으로 반복)
-
-✅ 출력 순서: 추천종목 → 날짜+목차 → 기사별 상세 순서 엄수
-✅ 분야태그: [정치][경제][금융][증권][기업][국제][생활][기술]+/세부
-✅ ①②③ 각 항목은 반드시 한 줄(1문장)로 작성 후 줄바꿈
-✅ ▔ 구분선(25자): 모든 기사의 ③시사점 아래 반드시 삽입
-✅ 목차와 상세내용 기사 수 일치, 하나도 빠뜨리지 말 것
-✅ 전체 한국어로 작성`;
-
-// ── [프롬프트 B] 두 번째 이미지부터 (목차 + 상세만, 추천 종목 없음) ─
-const PROMPT_ARTICLES = `당신은 경제·시사 뉴스레터 전문 에디터입니다.
-첨부된 이미지(신문/뉴스레터 스캔본)의 모든 기사를 읽고
-아래 형식을 한 글자도 변경하지 말고 그대로 따르세요.
-
-⛔ 추천 종목 섹션 출력 완전 금지. 기사 요약만 출력.
-   [PART 1] 등 라벨, 지시문 출력 금지.
-
-날짜: 이미지에서 추출. 없으면 오늘(${TODAY}) 사용.
-
-<${TODAY_KO} 뉴스>
-
-1. [분야/세부분야] 헤드라인 1줄 요약
-2. [분야/세부분야] 헤드라인 1줄 요약
-3. [분야/세부분야] 헤드라인 1줄 요약
-(이미지 속 기사 수만큼 모두 작성)
-
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
-
-1. [분야/세부분야] 위 목차와 동일한 헤드라인
-①핵심: 이 기사의 핵심 사실을 한 줄로 작성.
-②포인트: 시장·경제·생활에서 주목할 포인트 한 줄.
-③시사점: 독자의 판단·행동에 참고될 인사이트 한 줄.
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
-
-2. [분야/세부분야] 위 목차와 동일한 헤드라인
-①핵심: 한 줄 작성.
-②포인트: 한 줄 작성.
-③시사점: 한 줄 작성.
-▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
-
-(모든 기사 동일한 형식으로 반복)
-
-✅ 분야태그: [정치][경제][금융][증권][기업][국내][생활][기술]+/세부
-✅ ①②③ 각 항목은 반드시 한 줄(1문장)로 작성 후 줄바꿈
-✅ ▔ 구분선(25자): 모든 기사의 ③시사점 아래 반드시 삽입
-✅ 목차와 상세내용 기사 수 일치, 하나도 빠뜨리지 말 것
-✅ 전체 한국어로 작성`;
-
-// 하위 호환용
-const SUMMARY_PROMPT = PROMPT_STOCKS;
 
 
 
@@ -589,7 +586,7 @@ function finishAnalysis(btn, cbtn, loader, stopBtn) {
   abortController = null;
 }
 
-// ── 전체 순차 분석 (스트리밍) ─────────────────────────────
+// ── 전체 순차 분석 (2단계: Phase1 이미지 추출 → Phase2 텍스트 통합) ──
 async function analyzeAll() {
   if (!fileQueue.length) return;
 
@@ -614,93 +611,242 @@ async function analyzeAll() {
   currentResult = "";
   box.style.display = "";
   box.className = "";
-  box.textContent = "";
+  box.textContent = "⏳ Phase 1: 각 이미지에서 기사를 추출하고 있습니다…\n";
 
   const total = fileQueue.length;
   const statuses = new Array(total).fill("waiting");
+  const extractedParts = []; // Phase1 결과 모음
 
+  // ═══════════════════════════════════════════
+  // Phase 1: 이미지 → 기사 추출 (스트리밍)
+  // ═══════════════════════════════════════════
   for (let i = 0; i < total; i++) {
     if (signal.aborted) break;
 
     const f = fileQueue[i];
     statuses[i] = "processing";
     renderQueue([...statuses]);
-    ltxt.textContent = `(${i+1}/${total}) ${f.name} 분석 중…`;
-    pl.textContent   = `${i+1} / ${total} 진행 중`;
-    pf.style.width   = `${Math.round(i / total * 100)}%`;
+    ltxt.textContent = `[Phase 1] (${i+1}/${total}) ${f.name} 기사 추출 중…`;
+    pl.textContent   = `추출 ${i+1} / ${total}`;
+    // Phase1: 0~80% 범위 사용
+    pf.style.width   = `${Math.round(i / total * 80)}%`;
 
-    // 이미지 구분 표시 (2번째부터)
-    if (i > 0) { box.textContent += "\n\n"; }
+    let partText = "";
+    const onChunk = (text) => {
+      partText += text;
+      // Phase1 중간 진행 표시 (전체 누적 아님)
+      box.textContent = `⏳ Phase 1: 각 이미지에서 기사를 추출하고 있습니다…\n\n` +
+        `처리 완료: ${i}개 / ${total}개\n` +
+        `현재 처리 중: [${i+1}] ${f.name}\n\n` +
+        `지금까지 추출된 기사 수: 약 ${extractedParts.reduce((s,p) => s + (p.split("---").length), 0) + partText.split("---").length}건`;
+      box.scrollTop = box.scrollHeight;
+    };
 
-    try {
-      const prompt = (i === 0) ? PROMPT_STOCKS : PROMPT_ARTICLES;
-      let chunkText = "";
-
-      const onChunk = (text) => {
-        chunkText += text;
-        currentResult += text;
-        box.textContent = currentResult;
-        box.scrollTop = box.scrollHeight; // 자동 스크롤
-      };
-
-      // API 호출 (스트리밍, 재시도 2회)
-      for (let attempt = 0; attempt <= 2; attempt++) {
-        if (signal.aborted) break;
-        try {
-          if (currentAI === "openai") {
-            const key = getOpenAIKey();
-            if (!key) { openKeyModal(); break; }
-            await callOpenAIStream(key, f.b64, f.mimeType, prompt, onChunk, signal);
-          } else {
-            const key = getGeminiKey();
-            if (!key) { openKeyModal(); break; }
-            try {
-              await callGeminiStream(key, f.b64, f.mimeType, prompt, onChunk, signal);
-            } catch (gErr) {
-              const oKey = getOpenAIKey();
-              if (oKey && (gErr.message.includes("429") || gErr.message.includes("quota") || gErr.message.includes("RESOURCE_EXHAUSTED"))) {
-                ltxt.textContent = "Gemini 한도 초과 → OpenAI로 전환…";
-                toast("⚠️ Gemini 한도 초과, OpenAI로 전환합니다.", "");
-                await callOpenAIStream(oKey, f.b64, f.mimeType, prompt, onChunk, signal);
-                setAI("openai");
-              } else throw gErr;
-            }
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      if (signal.aborted) break;
+      try {
+        if (currentAI === "openai") {
+          const key = getOpenAIKey();
+          if (!key) { openKeyModal(); break; }
+          await callOpenAIStream(key, f.b64, f.mimeType, PROMPT_EXTRACT, onChunk, signal);
+        } else {
+          const key = getGeminiKey();
+          if (!key) { openKeyModal(); break; }
+          try {
+            await callGeminiStream(key, f.b64, f.mimeType, PROMPT_EXTRACT, onChunk, signal);
+          } catch (gErr) {
+            const oKey = getOpenAIKey();
+            if (oKey && (gErr.message.includes("429") || gErr.message.includes("quota") || gErr.message.includes("RESOURCE_EXHAUSTED"))) {
+              ltxt.textContent = "Gemini 한도 초과 → OpenAI로 전환…";
+              toast("⚠️ Gemini 한도 초과, OpenAI로 전환합니다.", "");
+              await callOpenAIStream(oKey, f.b64, f.mimeType, PROMPT_EXTRACT, onChunk, signal);
+              setAI("openai");
+            } else throw gErr;
           }
-          break;
-        } catch (retryErr) {
-          if (retryErr.name === "AbortError") throw retryErr;
-          if (attempt < 2) {
-            ltxt.textContent = `(${i+1}/${total}) 재시도 중… (${attempt+1}/2)`;
-            await sleep(3000 * (attempt + 1));
-          } else throw retryErr;
+        }
+        break;
+      } catch (retryErr) {
+        if (retryErr.name === "AbortError") throw retryErr;
+        if (attempt < 2) {
+          ltxt.textContent = `재시도 중… (${attempt+1}/2)`;
+          await sleep(3000 * (attempt + 1));
+        } else {
+          partText += `\n[❌ 오류: ${f.name} - ${retryErr.message}]\n---\n`;
         }
       }
-
-      statuses[i] = "done";
-    } catch (err) {
-      if (err.name === "AbortError") {
-        statuses[i] = "err";
-        renderQueue([...statuses]);
-        pl.textContent = "⛔ 중단됨";
-        finishAnalysis(btn, cbtn, loader, stopBtn);
-        return;
-      }
-      currentResult += `\n[❌ 오류] ${f.name}: ${err.message}\n`;
-      box.textContent = currentResult;
-      statuses[i] = "err";
     }
 
+    if (signal.aborted) {
+      statuses[i] = "err";
+      renderQueue([...statuses]);
+      pl.textContent = "⛔ 중단됨";
+      finishAnalysis(btn, cbtn, loader, stopBtn);
+      return;
+    }
+
+    extractedParts.push(partText.trim());
+    statuses[i] = "done";
     renderQueue([...statuses]);
-    if (i < total - 1 && !signal.aborted) await sleep(2000);
+    if (i < total - 1 && !signal.aborted) await sleep(1500);
+  }
+
+  if (signal.aborted) {
+    pl.textContent = "⛔ 중단됨";
+    finishAnalysis(btn, cbtn, loader, stopBtn);
+    return;
+  }
+
+  // ═══════════════════════════════════════════
+  // Phase 2: 전체 통합 재정리 (텍스트 전용)
+  // ═══════════════════════════════════════════
+  pf.style.width = "85%";
+  pl.textContent = "🔄 Phase 2: 전체 통합 중…";
+  ltxt.textContent = "모든 기사를 통합하여 최종 뉴스레터를 생성하고 있습니다…";
+  box.textContent = "🔄 Phase 2: 30개 이미지에서 추출된 기사를 하나로 통합 재정리 중입니다…\n잠시만 기다려주세요.";
+  toast("🔄 Phase 2: 기사 통합 및 추천 종목 선정 중…", "");
+
+  const allExtracted = extractedParts.join("\n\n---\n\n");
+  const consolidatePrompt = PROMPT_CONSOLIDATE + allExtracted;
+
+  currentResult = "";
+  const onFinalChunk = (text) => {
+    currentResult += text;
+    box.textContent = currentResult;
+    box.scrollTop = box.scrollHeight;
+  };
+
+  try {
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      if (signal.aborted) break;
+      try {
+        if (currentAI === "openai") {
+          const key = getOpenAIKey();
+          if (!key) { openKeyModal(); break; }
+          await callOpenAITextStream(key, consolidatePrompt, onFinalChunk, signal);
+        } else {
+          const key = getGeminiKey();
+          if (!key) { openKeyModal(); break; }
+          try {
+            await callGeminiTextStream(key, consolidatePrompt, onFinalChunk, signal);
+          } catch (gErr) {
+            const oKey = getOpenAIKey();
+            if (oKey && (gErr.message.includes("429") || gErr.message.includes("quota") || gErr.message.includes("RESOURCE_EXHAUSTED"))) {
+              ltxt.textContent = "Gemini 한도 초과 → OpenAI로 전환…";
+              toast("⚠️ Gemini 한도 초과, OpenAI로 전환합니다.", "");
+              await callOpenAITextStream(oKey, consolidatePrompt, onFinalChunk, signal);
+              setAI("openai");
+            } else throw gErr;
+          }
+        }
+        break;
+      } catch (retryErr) {
+        if (retryErr.name === "AbortError") throw retryErr;
+        if (attempt < 2) {
+          ltxt.textContent = `Phase 2 재시도 중… (${attempt+1}/2)`;
+          await sleep(3000 * (attempt + 1));
+        } else throw retryErr;
+      }
+    }
+  } catch (err) {
+    if (err.name !== "AbortError") {
+      currentResult += `\n[❌ Phase 2 통합 오류] ${err.message}\n`;
+      box.textContent = currentResult;
+    }
   }
 
   pf.style.width = "100%";
-  pl.textContent = signal.aborted ? "⛔ 중단됨" : `✅ 전체 ${total}개 완료`;
+  pl.textContent = signal.aborted ? "⛔ 중단됨" : `✅ 완료 (${total}개 이미지 → 통합 뉴스레터)`;
   finishAnalysis(btn, cbtn, loader, stopBtn);
-  if (!signal.aborted) toast(`✅ ${total}개 이미지 요약 완료!`, "ok");
+  if (!signal.aborted) toast(`✅ ${total}개 이미지 통합 뉴스레터 완성!`, "ok");
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── Gemini 텍스트 전용 스트리밍 (Phase 2 통합용) ──────────────
+async function callGeminiTextStream(apiKey, prompt, onChunk, signal) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?key=${apiKey}&alt=sse`;
+  const body = {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.3, maxOutputTokens: 16384 }
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || "Gemini API 오류 " + res.status);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        const json = JSON.parse(data);
+        const text = json.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (text && onChunk) onChunk(text);
+      } catch {}
+    }
+  }
+}
+
+// ── OpenAI 텍스트 전용 스트리밍 (Phase 2 통합용) ─────────────
+async function callOpenAITextStream(apiKey, prompt, onChunk, signal) {
+  const url = "https://api.openai.com/v1/chat/completions";
+  const body = {
+    model: "gpt-4o",
+    stream: true,
+    messages: [
+      { role: "system", content: "당신은 경제·시사 뉴스레터 전문 에디터입니다. 입력된 기사 목록을 지정된 형식으로 정리하세요." },
+      { role: "user", content: prompt }
+    ],
+    max_tokens: 8192,
+    temperature: 0.3
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || "OpenAI API 오류 " + res.status);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        const json = JSON.parse(data);
+        const text = json.choices?.[0]?.delta?.content || "";
+        if (text && onChunk) onChunk(text);
+      } catch {}
+    }
+  }
+}
+
+
 
 // ── Gemini 스트리밍 호출 (SSE) ─────────────────────────────
 async function callGeminiStream(apiKey, b64, mimeType, prompt = SUMMARY_PROMPT, onChunk, signal) {
