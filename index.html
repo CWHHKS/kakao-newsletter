@@ -237,10 +237,14 @@
         <button class="btn btn-primary" id="analyze-btn" onclick="analyzeAll()" disabled style="flex:1">
           ✨ AI 요약 생성
         </button>
+        <button class="btn btn-danger" id="stop-btn" onclick="stopAnalysis()" style="flex:0 0 auto;width:auto;padding:12px 16px;display:none;background:#ef4444;color:#fff;">
+          🛑 중단
+        </button>
         <button class="btn btn-secondary" id="clear-btn" onclick="clearFiles()" disabled style="flex:0 0 auto;width:auto;padding:12px 14px;">
           🗑 지우기
         </button>
       </div>
+
     </div>
 
 
@@ -300,7 +304,7 @@
 <div id="toast"></div>
 
 <script>
-// ── AI 프롬프트 v3.1 ────────────────────────────────────
+// ── AI 프롬프트 v2.0 (최종 확정) ──────────────────────────
 const TODAY = (() => {
   const d = new Date();
   const y = d.getFullYear();
@@ -313,42 +317,36 @@ const TODAY_KO = (() => {
   return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일`;
 })();
 
-// ── [프롬프트 A] 첫 번째 이미지용: 추천 종목 + 기사 요약 ─
+// ── [프롬프트 A] 첫 번째 이미지용 (추천 종목 + 목차 + 상세) ─
 const PROMPT_STOCKS = `당신은 경제·시사 뉴스레터 전문 에디터입니다.
-이미지(신문·뉴스레터 스캔본)의 모든 기사를 읽고
-아래 형식을 절대 변형하지 말고 그대로 출력하세요.
+첨부된 이미지(신문/뉴스레터 스캔본)의 모든 기사를 읽고
+아래 순서와 형식을 한 글자도 변경하지 말고 그대로 따르세요.
 
-⛔ 금지: 섹션 라벨([PART 1] 등), 지시문(▶, 출력 형식 등),
-   파일명·번호 구분자, 형식 외 임의 텍스트 추가 일절 금지.
+⛔ 절대 금지: [PART 1] [PART 2] [PART 3] 라벨 출력 금지.
+   ▶, 출력 형식, 작성 규칙 등 지시문 출력 금지.
+   아래 출력 형식 외 임의 텍스트 추가 금지.
 
-📅 날짜: 이미지에서 읽을 수 있으면 그 날짜, 없으면 ${TODAY} 사용.
+날짜: 이미지에서 추출. 없으면 오늘(${TODAY}) 사용.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 💰 오늘의 추천 종목 (${TODAY})
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-[아래는 예시 형식 — 반드시 실제 회사명·종목코드로 대체할 것]
+① 실제 회사명 (종목코드·국내/미국) ★★★
+[참조기사 #번호 · 분야/세부분야]
+→ 추천 이유 핵심 한 줄.
+  추가 근거 한 줄.
 
-① 삼성전자 (005930·국내) ★★★
-[참조기사 #3 · 기업/반도체]
-→ 추천 핵심 이유 첫 번째 줄.
-  구체적 수치·사실 두 번째 줄.
-  추가 근거 세 번째 줄.
-  추가 근거 네 번째 줄.
+② 실제 회사명 (종목코드·국내/미국) ★★★
+[참조기사 #번호 · 분야/세부분야]
+→ 추천 이유 핵심 한 줄.
+  추가 근거 한 줄.
 
-② 엔비디아 (NVDA·미국) ★★★
-[참조기사 #7 · 증권/AI]
-→ 추천 핵심 이유 첫 번째 줄.
-  구체적 수치·사실 두 번째 줄.
-  추가 근거 세 번째 줄.
-  추가 근거 네 번째 줄.
-
-③ LG에너지솔루션 (373220·국내) ★★☆
-[참조기사 #12 · 기업/배터리]
-→ 추천 핵심 이유 첫 번째 줄.
-  구체적 수치·사실 두 번째 줄.
-  추가 근거 세 번째 줄.
-  (※ 단기 급등 등 주의사항 있으면 반드시 기재)
+③ 실제 회사명 (종목코드·국내/미국) ★★☆
+[참조기사 #번호 · 분야/세부분야]
+→ 추천 이유 핵심 한 줄.
+  추가 근거 한 줄.
+  (※ 단기 급등 구간 등 주의사항이 있으면 반드시 기재)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ 본 추천 종목은 오늘의 뉴스 기사를
@@ -357,65 +355,84 @@ const PROMPT_STOCKS = `당신은 경제·시사 뉴스레터 전문 에디터입
    반드시 본인에게 있습니다.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-[추천 종목 작성 규칙]
-- 기사 근거가 명확한 종목만 최대 3개 선별
-- 없으면: "오늘 기사에서 명확한 추천 종목 없음" 1줄 출력
-- ① ② ③ 앞 숫자와 함께 반드시 실제 회사명(한글) + 종목코드 기재
-- → 설명은 2~4줄, 구체적 수치·사실 포함
-- 별점: ★★★(강력추천) ★★☆(관심) ★☆☆(주의)
+추천 종목 규칙: 기사 근거 명확한 종목만 최대 3개.
+없으면 "오늘 기사에서 명확한 추천 종목 없음" 1줄.
+반드시 실제 회사명(한글)+종목코드 기재.
+별점: ★★★(강력추천) ★★☆(관심) ★☆☆(주의)
 
 <${TODAY_KO} 뉴스>
 
-1. [분야/세부분야] 헤드라인 — 핵심 내용 1줄
-2. [분야/세부분야] 헤드라인 — 핵심 내용 1줄
-3. [분야/세부분야] 헤드라인 — 핵심 내용 1줄
-(이미지 속 기사 수만큼 전부 작성)
+1. [분야/세부분야] 헤드라인 1줄 요약
+2. [분야/세부분야] 헤드라인 1줄 요약
+3. [분야/세부분야] 헤드라인 1줄 요약
+(이미지 속 기사 수만큼 모두 작성)
 
 ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
 1. [분야/세부분야] 위 목차와 동일한 헤드라인
-①핵심: 이 기사의 가장 중요한 사실을 수치·고유명사 포함해 완전한 한 문장으로 작성.
-②포인트: 시장·경제·생활에서 주목할 구체적 포인트를 완전한 한 문장으로 작성.
-③시사점: 독자가 판단·행동할 때 참고할 인사이트를 완전한 한 문장으로 작성.
+①핵심: 이 기사의 핵심 사실을 한 줄로 작성.
+②포인트: 시장·경제·생활에서 주목할 포인트 한 줄.
+③시사점: 독자의 판단·행동에 참고될 인사이트 한 줄.
 ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
-(이상 형식으로 이미지 속 모든 기사 반복)
+2. [분야/세부분야] 위 목차와 동일한 헤드라인
+①핵심: 한 줄 작성.
+②포인트: 한 줄 작성.
+③시사점: 한 줄 작성.
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
+(모든 기사 동일한 형식으로 반복)
+
+✅ 출력 순서: 추천종목 → 날짜+목차 → 기사별 상세 순서 엄수
 ✅ 분야태그: [정치][경제][금융][증권][기업][국제][생활][기술]+/세부
-✅ 기사 하나도 빠뜨리지 말 것 / 전체 한국어`;
+✅ ①②③ 각 항목은 반드시 한 줄(1문장)로 작성 후 줄바꿈
+✅ ▔ 구분선(25자): 모든 기사의 ③시사점 아래 반드시 삽입
+✅ 목차와 상세내용 기사 수 일치, 하나도 빠뜨리지 말 것
+✅ 전체 한국어로 작성`;
 
-// ── [프롬프트 B] 두 번째 이미지부터: 기사 요약만 ────────
+// ── [프롬프트 B] 두 번째 이미지부터 (목차 + 상세만, 추천 종목 없음) ─
 const PROMPT_ARTICLES = `당신은 경제·시사 뉴스레터 전문 에디터입니다.
-이미지(신문·뉴스레터 스캔본)의 모든 기사를 읽고
-아래 형식을 절대 변형하지 말고 그대로 출력하세요.
+첨부된 이미지(신문/뉴스레터 스캔본)의 모든 기사를 읽고
+아래 형식을 한 글자도 변경하지 말고 그대로 따르세요.
 
-⛔ 금지: 추천 종목 섹션 출력 완전 금지. 기사 요약만 출력.
-   섹션 라벨, 지시문, 파일명·번호 구분자 추가 금지.
+⛔ 추천 종목 섹션 출력 완전 금지. 기사 요약만 출력.
+   [PART 1] 등 라벨, 지시문 출력 금지.
 
-📅 날짜: 이미지에서 읽을 수 있으면 그 날짜, 없으면 ${TODAY} 사용.
+날짜: 이미지에서 추출. 없으면 오늘(${TODAY}) 사용.
 
 <${TODAY_KO} 뉴스>
 
-1. [분야/세부분야] 헤드라인 — 핵심 내용 1줄
-2. [분야/세부분야] 헤드라인 — 핵심 내용 1줄
-3. [분야/세부분야] 헤드라인 — 핵심 내용 1줄
-(이미지 속 기사 수만큼 전부 작성)
+1. [분야/세부분야] 헤드라인 1줄 요약
+2. [분야/세부분야] 헤드라인 1줄 요약
+3. [분야/세부분야] 헤드라인 1줄 요약
+(이미지 속 기사 수만큼 모두 작성)
 
 ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
 1. [분야/세부분야] 위 목차와 동일한 헤드라인
-①핵심: 이 기사의 가장 중요한 사실을 수치·고유명사 포함해 완전한 한 문장으로 작성.
-②포인트: 시장·경제·생활에서 주목할 구체적 포인트를 완전한 한 문장으로 작성.
-③시사점: 독자가 판단·행동할 때 참고할 인사이트를 완전한 한 문장으로 작성.
+①핵심: 이 기사의 핵심 사실을 한 줄로 작성.
+②포인트: 시장·경제·생활에서 주목할 포인트 한 줄.
+③시사점: 독자의 판단·행동에 참고될 인사이트 한 줄.
 ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
-(이상 형식으로 이미지 속 모든 기사 반복)
+2. [분야/세부분야] 위 목차와 동일한 헤드라인
+①핵심: 한 줄 작성.
+②포인트: 한 줄 작성.
+③시사점: 한 줄 작성.
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
-✅ 분야태그: [정치][경제][금융][증권][기업][국제][생활][기술]+/세부
-✅ 기사 하나도 빠뜨리지 말 것 / 전체 한국어`;
+(모든 기사 동일한 형식으로 반복)
 
-// 하위 호환용 (단일 이미지 처리 시)
+✅ 분야태그: [정치][경제][금융][증권][기업][국내][생활][기술]+/세부
+✅ ①②③ 각 항목은 반드시 한 줄(1문장)로 작성 후 줄바꿈
+✅ ▔ 구분선(25자): 모든 기사의 ③시사점 아래 반드시 삽입
+✅ 목차와 상세내용 기사 수 일치, 하나도 빠뜨리지 말 것
+✅ 전체 한국어로 작성`;
+
+// 하위 호환용
 const SUMMARY_PROMPT = PROMPT_STOCKS;
+
+
 
 
 
@@ -553,99 +570,236 @@ function clearFiles() {
   document.getElementById("clear-btn").disabled = true;
 }
 
-// ── 전체 순차 분석 ────────────────────────────────────────
+// ── 중단 제어 ─────────────────────────────────────────────
+let abortController = null;
+
+function stopAnalysis() {
+  if (abortController) {
+    abortController.abort();
+    toast("🛑 분석을 중단했습니다.", "");
+  }
+}
+
+// ── 분석 종료 후 UI 복원 ──────────────────────────────────
+function finishAnalysis(btn, cbtn, loader, stopBtn) {
+  loader.classList.remove("show");
+  btn.disabled = false;
+  cbtn.disabled = false;
+  stopBtn.style.display = "none";
+  abortController = null;
+}
+
+// ── 전체 순차 분석 (스트리밍) ─────────────────────────────
 async function analyzeAll() {
   if (!fileQueue.length) return;
-  const btn  = document.getElementById("analyze-btn");
-  const cbtn = document.getElementById("clear-btn");
-  const loader = document.getElementById("loader");
-  const ltxt = document.getElementById("loader-txt");
-  const box  = document.getElementById("result-box");
-  const pw   = document.getElementById("progressWrap");
-  const pf   = document.getElementById("progressFill");
-  const pl   = document.getElementById("progressLabel");
+
+  abortController = new AbortController();
+  const signal = abortController.signal;
+
+  const btn     = document.getElementById("analyze-btn");
+  const cbtn    = document.getElementById("clear-btn");
+  const stopBtn = document.getElementById("stop-btn");
+  const loader  = document.getElementById("loader");
+  const ltxt    = document.getElementById("loader-txt");
+  const box     = document.getElementById("result-box");
+  const pw      = document.getElementById("progressWrap");
+  const pf      = document.getElementById("progressFill");
+  const pl      = document.getElementById("progressLabel");
 
   btn.disabled = true; cbtn.disabled = true;
+  stopBtn.style.display = "inline-flex";
   loader.classList.add("show");
-  box.style.display = "none";
   pw.style.display = "block";
   pf.style.width = "0%";
   currentResult = "";
+  box.style.display = "";
+  box.className = "";
+  box.textContent = "";
 
   const total = fileQueue.length;
   const statuses = new Array(total).fill("waiting");
-  const results = [];
 
   for (let i = 0; i < total; i++) {
+    if (signal.aborted) break;
+
     const f = fileQueue[i];
     statuses[i] = "processing";
     renderQueue([...statuses]);
     ltxt.textContent = `(${i+1}/${total}) ${f.name} 분석 중…`;
-    pl.textContent   = `${i+1} / ${total} 완료`;
+    pl.textContent   = `${i+1} / ${total} 진행 중`;
     pf.style.width   = `${Math.round(i / total * 100)}%`;
 
-    try {
-      let result;
-      // 첫 번째 이미지: 추천 종목 포함 / 나머지: 기사 요약만
-      const prompt = (i === 0) ? PROMPT_STOCKS : PROMPT_ARTICLES;
+    // 이미지 구분 표시 (2번째부터)
+    if (i > 0) { box.textContent += "\n\n"; }
 
-      // API 호출 (실패 시 최대 2회 재시도)
+    try {
+      const prompt = (i === 0) ? PROMPT_STOCKS : PROMPT_ARTICLES;
+      let chunkText = "";
+
+      const onChunk = (text) => {
+        chunkText += text;
+        currentResult += text;
+        box.textContent = currentResult;
+        box.scrollTop = box.scrollHeight; // 자동 스크롤
+      };
+
+      // API 호출 (스트리밍, 재시도 2회)
       for (let attempt = 0; attempt <= 2; attempt++) {
+        if (signal.aborted) break;
         try {
           if (currentAI === "openai") {
             const key = getOpenAIKey();
             if (!key) { openKeyModal(); break; }
-            result = await callOpenAI(key, f.b64, f.mimeType, prompt);
+            await callOpenAIStream(key, f.b64, f.mimeType, prompt, onChunk, signal);
           } else {
             const key = getGeminiKey();
             if (!key) { openKeyModal(); break; }
             try {
-              result = await callGemini(key, f.b64, f.mimeType, prompt);
+              await callGeminiStream(key, f.b64, f.mimeType, prompt, onChunk, signal);
             } catch (gErr) {
               const oKey = getOpenAIKey();
               if (oKey && (gErr.message.includes("429") || gErr.message.includes("quota") || gErr.message.includes("RESOURCE_EXHAUSTED"))) {
                 ltxt.textContent = "Gemini 한도 초과 → OpenAI로 전환…";
                 toast("⚠️ Gemini 한도 초과, OpenAI로 전환합니다.", "");
-                result = await callOpenAI(oKey, f.b64, f.mimeType, prompt);
+                await callOpenAIStream(oKey, f.b64, f.mimeType, prompt, onChunk, signal);
                 setAI("openai");
               } else throw gErr;
             }
           }
-          break; // 성공 시 재시도 반복 종료
+          break;
         } catch (retryErr) {
+          if (retryErr.name === "AbortError") throw retryErr;
           if (attempt < 2) {
             ltxt.textContent = `(${i+1}/${total}) 재시도 중… (${attempt+1}/2)`;
-            await sleep(3000 * (attempt + 1)); // 3초, 6초
-          } else {
-            throw retryErr; // 최종 실패
-          }
+            await sleep(3000 * (attempt + 1));
+          } else throw retryErr;
         }
       }
-      results.push(result);
+
       statuses[i] = "done";
     } catch (err) {
-      results.push(`[❌ 오류] ${f.name}: ${err.message}`);
+      if (err.name === "AbortError") {
+        statuses[i] = "err";
+        renderQueue([...statuses]);
+        pl.textContent = "⛔ 중단됨";
+        finishAnalysis(btn, cbtn, loader, stopBtn);
+        return;
+      }
+      currentResult += `\n[❌ 오류] ${f.name}: ${err.message}\n`;
+      box.textContent = currentResult;
       statuses[i] = "err";
     }
 
     renderQueue([...statuses]);
-    // API rate limit 방지: 2초 대기 (마지막 제외)
-    if (i < total - 1) await sleep(2000);
+    if (i < total - 1 && !signal.aborted) await sleep(2000);
   }
 
   pf.style.width = "100%";
-  pl.textContent = `전체 ${total}개 완료`;
-
-  currentResult = results.join("\n\n");
-  box.style.display = "";
-  box.className = "";
-  box.textContent = currentResult;
-  loader.classList.remove("show");
-  btn.disabled = false; cbtn.disabled = false;
-  toast(`✅ ${total}개 이미지 요약 완료!`, "ok");
+  pl.textContent = signal.aborted ? "⛔ 중단됨" : `✅ 전체 ${total}개 완료`;
+  finishAnalysis(btn, cbtn, loader, stopBtn);
+  if (!signal.aborted) toast(`✅ ${total}개 이미지 요약 완료!`, "ok");
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── Gemini 스트리밍 호출 (SSE) ─────────────────────────────
+async function callGeminiStream(apiKey, b64, mimeType, prompt = SUMMARY_PROMPT, onChunk, signal) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:streamGenerateContent?key=${apiKey}&alt=sse`;
+  const body = {
+    contents: [{ role: "user", parts: [
+      { text: prompt },
+      { inline_data: { mime_type: mimeType, data: b64 } }
+    ]}],
+    generationConfig: { temperature: 0.4, maxOutputTokens: 8192 }
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || "Gemini API 오류 " + res.status);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        const json = JSON.parse(data);
+        const text = json.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (text && onChunk) onChunk(text);
+      } catch {}
+    }
+  }
+}
+
+// ── OpenAI 스트리밍 호출 (SSE) ─────────────────────────────
+async function callOpenAIStream(apiKey, b64, mimeType, prompt = SUMMARY_PROMPT, onChunk, signal) {
+  const compressed = await resizeImage(b64, mimeType, 1024, 0.85);
+  const url = "https://api.openai.com/v1/chat/completions";
+  const body = {
+    model: "gpt-4o",
+    stream: true,
+    messages: [
+      {
+        role: "system",
+        content: "You are a Korean newspaper/newsletter summarizer. You MUST read all text visible in the image and produce a structured Korean summary. Never say you cannot read text from images — always extract and summarize ALL visible text."
+      },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "[중요] 이미지 속 신문/뉴스레터의 모든 기사 텍스트를 읽고 아래 형식으로 요약하세요.\n\n" + prompt },
+          { type: "image_url", image_url: { url: `data:image/jpeg;base64,${compressed}`, detail: "high" } }
+        ]
+      }
+    ],
+    max_tokens: 4096,
+    temperature: 0.3
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || "OpenAI API 오류 " + res.status);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        const json = JSON.parse(data);
+        const text = json.choices?.[0]?.delta?.content || "";
+        if (text && onChunk) onChunk(text);
+      } catch {}
+    }
+  }
+}
+
+
 
 
 // ── Gemini Vision 호출 ────────────────────────────────────
