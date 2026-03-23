@@ -6,6 +6,7 @@
 <title>📰 뉴스레터 AI 요약기</title>
 <meta name="description" content="신문/뉴스레터 이미지를 AI가 자동으로 읽고 정형 포맷으로 요약합니다.">
 <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
   :root {
     --bg: #0f1117;
@@ -95,6 +96,42 @@
   }
   #result-box.placeholder { color: var(--muted); font-style: italic; }
 
+  /* 파일 큐 */
+  .file-queue {
+    margin-top: 12px; display: none;
+    max-height: 200px; overflow-y: auto;
+    border: 1px solid var(--border); border-radius: 9px;
+  }
+  .file-item {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 12px; font-size: .78rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .file-item:last-child { border-bottom: none; }
+  .file-item .fi-num {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--card2); display: flex; align-items: center; justify-content: center;
+    font-size: .7rem; font-weight: 700; color: var(--accent); flex-shrink: 0;
+  }
+  .file-item .fi-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fi-status { font-size: .72rem; flex-shrink: 0; }
+  .fi-status.done { color: var(--green); }
+  .fi-status.processing { color: var(--yellow); }
+  .fi-status.waiting { color: var(--muted); }
+  .fi-status.err { color: var(--red); }
+
+  /* 진행률 바 */
+  .progress-wrap { margin-top: 10px; display: none; }
+  .progress-bar-bg {
+    height: 6px; background: var(--border); border-radius: 99px; overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 99px; transition: width .4s ease;
+    width: 0%;
+  }
+  .progress-label { font-size: .76rem; color: var(--muted); margin-top: 5px; }
+
   /* API 키 모달 */
   .modal-bg {
     display: none; position: fixed; inset: 0;
@@ -183,19 +220,29 @@
       <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
         <div class="ico">🗞️</div>
         <h3>클릭하거나 이미지를 드래그하세요</h3>
-        <p>JPG, PNG · 신문/뉴스레터 스캔 이미지</p>
-        <input type="file" id="fileInput" accept="image/*" onchange="handleFile(event)">
+        <p>JPG, PNG 또는 <strong style="color:var(--accent)">ZIP 압축파일</strong> · 최대 30개</p>
+        <input type="file" id="fileInput" accept="image/*,.zip" multiple onchange="handleFiles(event)">
       </div>
 
-      <div id="preview-wrap">
-        <img id="preview-img" src="" alt="미리보기">
-        <div id="file-info"></div>
+      <!-- 파일 큐 목록 -->
+      <div class="file-queue" id="fileQueue"></div>
+
+      <!-- 진행률 -->
+      <div class="progress-wrap" id="progressWrap">
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+        <div class="progress-label" id="progressLabel"></div>
       </div>
 
-      <button class="btn btn-primary" id="analyze-btn" onclick="analyzeImage()" disabled>
-        ✨ AI 요약 생성
-      </button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" id="analyze-btn" onclick="analyzeAll()" disabled style="flex:1">
+          ✨ AI 요약 생성
+        </button>
+        <button class="btn btn-secondary" id="clear-btn" onclick="clearFiles()" disabled style="flex:0 0 auto;width:auto;padding:12px 14px;">
+          🗑 지우기
+        </button>
+      </div>
     </div>
+
 
     <!-- 오른쪽: 결과 -->
     <div class="card">
@@ -366,9 +413,7 @@ const SUMMARY_PROMPT = `━━━━━━━━━━━━━━━━━━�
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-// ── 상태 ────────────────────────────────────────────────
-let currentFile = null;
-let currentResult = "";
+// ── 상태 ────────────────────────────────────────────
 let currentAI = localStorage.getItem("selected_ai") || "gemini"; // 'gemini' | 'openai'
 
 // ── AI 선택 토글 ──────────────────────────────────────────
@@ -418,91 +463,167 @@ function saveKeys() {
   toast("✅ API 키 저장됨", "ok");
 }
 
-// ── 파일 처리 ────────────────────────────────────────────
-function handleFile(e) { if (e.target.files[0]) setFile(e.target.files[0]); }
-function setFile(file) {
-  currentFile = file;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    document.getElementById("preview-img").src = ev.target.result;
-    document.getElementById("preview-wrap").style.display = "block";
-  };
-  reader.readAsDataURL(file);
-  document.getElementById("file-info").textContent = `${file.name}  (${(file.size/1024).toFixed(0)}KB)`;
-  document.getElementById("analyze-btn").disabled = false;
-  document.getElementById("result-box").className = "placeholder";
-  currentResult = "";
-  toast("이미지 선택됨", "ok");
+// ── 파일 큐 상태 ──────────────────────────────────────────
+let fileQueue = [];   // { name, b64, mimeType }[]
+let currentResult = "";
+
+// ── 파일 추가 처리 (input change 이벤트) ─────────────────
+async function handleFiles(e) {
+  const files = Array.from(e.target.files);
+  await addFilesToQueue(files);
+  e.target.value = ""; // 동일 파일 재선택 허용
 }
 
-// 드래그 앤 드롭
+// ── 파일 추가 처리 (드래그 앤 드롭) ─────────────────────
 const dz = document.getElementById("dropZone");
 dz.addEventListener("dragover", e => { e.preventDefault(); dz.classList.add("over"); });
 dz.addEventListener("dragleave", () => dz.classList.remove("over"));
-dz.addEventListener("drop", e => {
+dz.addEventListener("drop", async e => {
   e.preventDefault(); dz.classList.remove("over");
-  const f = e.dataTransfer.files[0];
-  if (f && f.type.startsWith("image/")) setFile(f);
+  const files = Array.from(e.dataTransfer.files);
+  await addFilesToQueue(files);
 });
 
-// ── 메인 분석 함수 (AI 선택 + fallback) ──────────────────
-async function analyzeImage() {
-  if (!currentFile) return;
-  const btn = document.getElementById("analyze-btn");
-  const loader = document.getElementById("loader");
-  const box = document.getElementById("result-box");
-  const ltxt = document.getElementById("loader-txt");
+// ── 파일 큐에 파일 추가 (이미지 OR ZIP) ─────────────────
+async function addFilesToQueue(files) {
+  for (const file of files) {
+    if (file.name.toLowerCase().endsWith(".zip")) {
+      toast("📦 ZIP 압축 해제 중…", "");
+      try {
+        const zip = await JSZip.loadAsync(file);
+        const imgExts = /\.(jpg|jpeg|png|gif|webp)$/i;
+        const entries = Object.entries(zip.files)
+          .filter(([n, f]) => !f.dir && imgExts.test(n))
+          .sort(([a], [b]) => a.localeCompare(b));
+        for (const [name, entry] of entries) {
+          const blob = await entry.async("blob");
+          const mimeType = name.match(/\.png$/i) ? "image/png" : "image/jpeg";
+          const b64 = await blobToBase64(blob);
+          fileQueue.push({ name, b64, mimeType });
+        }
+        toast(`✅ ZIP에서 ${entries.length}개 이미지 추출됨`, "ok");
+      } catch (err) {
+        toast("❌ ZIP 해제 실패: " + err.message, "err");
+      }
+    } else if (file.type.startsWith("image/")) {
+      if (fileQueue.length >= 30) { toast("⚠️ 최대 30개까지 가능합니다.", "err"); break; }
+      const b64 = await fileToBase64(file);
+      fileQueue.push({ name: file.name, b64, mimeType: file.type || "image/jpeg" });
+    }
+  }
+  if (fileQueue.length > 30) fileQueue = fileQueue.slice(0, 30);
+  renderQueue();
+}
 
-  btn.disabled = true;
+// ── 큐 목록 렌더링 ────────────────────────────────────────
+function renderQueue(statuses = []) {
+  const el = document.getElementById("fileQueue");
+  if (!fileQueue.length) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  el.innerHTML = fileQueue.map((f, i) => {
+    const s = statuses[i] || "waiting";
+    const icon = s === "done" ? "✅" : s === "processing" ? "⏳" : s === "err" ? "❌" : "○";
+    const cls = s;
+    return `<div class="file-item">
+      <div class="fi-num">${i+1}</div>
+      <div class="fi-name">${f.name}</div>
+      <span class="fi-status ${cls}">${icon}</span>
+    </div>`;
+  }).join("");
+  document.getElementById("analyze-btn").disabled = false;
+  document.getElementById("clear-btn").disabled = false;
+}
+
+// ── 큐 초기화 ─────────────────────────────────────────────
+function clearFiles() {
+  fileQueue = [];
+  currentResult = "";
+  renderQueue();
+  document.getElementById("progressWrap").style.display = "none";
+  document.getElementById("result-box").className = "placeholder";
+  document.getElementById("result-box").textContent = "이미지를 업로드하고 [AI 요약 생성]을 눌러주세요.";
+  document.getElementById("analyze-btn").disabled = true;
+  document.getElementById("clear-btn").disabled = true;
+}
+
+// ── 전체 순차 분석 ────────────────────────────────────────
+async function analyzeAll() {
+  if (!fileQueue.length) return;
+  const btn  = document.getElementById("analyze-btn");
+  const cbtn = document.getElementById("clear-btn");
+  const loader = document.getElementById("loader");
+  const ltxt = document.getElementById("loader-txt");
+  const box  = document.getElementById("result-box");
+  const pw   = document.getElementById("progressWrap");
+  const pf   = document.getElementById("progressFill");
+  const pl   = document.getElementById("progressLabel");
+
+  btn.disabled = true; cbtn.disabled = true;
   loader.classList.add("show");
   box.style.display = "none";
+  pw.style.display = "block";
+  pf.style.width = "0%";
+  currentResult = "";
 
-  const b64 = await fileToBase64(currentFile);
-  const mimeType = currentFile.type || "image/jpeg";
-  let result = null;
+  const total = fileQueue.length;
+  const statuses = new Array(total).fill("waiting");
+  const results = [];
 
-  try {
-    if (currentAI === "openai") {
-      // ── OpenAI GPT-4o Vision ──────────────────────────
-      const key = getOpenAIKey();
-      if (!key) { openKeyModal(); loader.classList.remove("show"); box.style.display=""; btn.disabled=false; return; }
-      ltxt.textContent = "GPT-4o가 이미지를 분석 중입니다…";
-      result = await callOpenAI(key, b64, mimeType);
-    } else {
-      // ── Gemini Vision (기본) ──────────────────────────
-      const key = getGeminiKey();
-      if (!key) { openKeyModal(); loader.classList.remove("show"); box.style.display=""; btn.disabled=false; return; }
-      ltxt.textContent = "Gemini가 이미지를 분석 중입니다…";
-      try {
-        result = await callGemini(key, b64, mimeType);
-      } catch (e) {
-        // Gemini 실패 시 OpenAI로 자동 fallback
-        const oKey = getOpenAIKey();
-        if (oKey && (e.message.includes("429") || e.message.includes("quota") || e.message.includes("RESOURCE_EXHAUSTED"))) {
-          ltxt.textContent = "Gemini 한도 초과 → OpenAI로 자동 전환 중…";
-          toast("⚠️ Gemini 한도 초과, OpenAI로 전환합니다.", "");
-          result = await callOpenAI(oKey, b64, mimeType);
-          setAI("openai");
-        } else { throw e; }
+  for (let i = 0; i < total; i++) {
+    const f = fileQueue[i];
+    statuses[i] = "processing";
+    renderQueue([...statuses]);
+    ltxt.textContent = `(${i+1}/${total}) ${f.name} 분석 중…`;
+    pl.textContent   = `${i+1} / ${total} 완료`;
+    pf.style.width   = `${Math.round(i / total * 100)}%`;
+
+    try {
+      let result;
+      if (currentAI === "openai") {
+        const key = getOpenAIKey();
+        if (!key) { openKeyModal(); break; }
+        result = await callOpenAI(key, f.b64, f.mimeType);
+      } else {
+        const key = getGeminiKey();
+        if (!key) { openKeyModal(); break; }
+        try {
+          result = await callGemini(key, f.b64, f.mimeType);
+        } catch (err) {
+          const oKey = getOpenAIKey();
+          if (oKey && (err.message.includes("429") || err.message.includes("quota") || err.message.includes("RESOURCE_EXHAUSTED"))) {
+            ltxt.textContent = "Gemini 한도 초과 → OpenAI로 전환…";
+            toast("⚠️ Gemini 한도 초과, OpenAI로 전환합니다.", "");
+            result = await callOpenAI(oKey, f.b64, f.mimeType);
+            setAI("openai");
+          } else throw err;
+        }
       }
+      results.push(`━━━━━━━━ [${i+1}/${total}] ${f.name} ━━━━━━━━\n\n${result}`);
+      statuses[i] = "done";
+    } catch (err) {
+      results.push(`[${i+1}/${total}] ${f.name} — ❌ 오류: ${err.message}`);
+      statuses[i] = "err";
     }
 
-    currentResult = result;
-    box.style.display = "";
-    box.className = "";
-    box.textContent = currentResult;
-    toast("✅ 요약 완료!", "ok");
-
-  } catch (e) {
-    box.style.display = "";
-    box.className = "placeholder";
-    box.textContent = "❌ 오류: " + e.message;
-    toast("분석 실패: " + e.message, "err");
+    renderQueue([...statuses]);
+    // API rate limit 방지: 요청 사이 1초 대기 (마지막 제외)
+    if (i < total - 1) await sleep(1200);
   }
 
+  pf.style.width = "100%";
+  pl.textContent = `전체 ${total}개 완료`;
+
+  currentResult = results.join("\n\n" + "═".repeat(30) + "\n\n");
+  box.style.display = "";
+  box.className = "";
+  box.textContent = currentResult;
   loader.classList.remove("show");
-  btn.disabled = false;
+  btn.disabled = false; cbtn.disabled = false;
+  toast(`✅ ${total}개 이미지 요약 완료!`, "ok");
 }
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 
 // ── Gemini Vision 호출 ────────────────────────────────────
 async function callGemini(apiKey, b64, mimeType) {
@@ -562,6 +683,17 @@ function fileToBase64(file) {
     r.readAsDataURL(file);
   });
 }
+
+// ── Blob → base64 (ZIP 내부 파일용) ─────────────────────
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = e => resolve(e.target.result.split(",")[1]);
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+
 
 // ── 이미지 리사이즈 + 압축 (Canvas) ─────────────────────────
 function resizeImage(b64, mimeType, maxPx, quality) {
