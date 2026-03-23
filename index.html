@@ -306,6 +306,19 @@
 <script>
 // ── AI 프롬프트 (옵션 A: 2단계 처리) ─────────────────────
 
+// ── 날짜 상수 (프롬프트보다 먼저 선언) ───────────────────────
+const TODAY = (() => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}.${m}.${day}`;
+})();
+const TODAY_KO = (() => {
+  const d = new Date();
+  return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일`;
+})();
+
 // ── [Phase 1] 이미지 → 기사 추출 전용 프롬프트 ──────────────
 // 각 이미지에서 기사만 추출 (번호·추천종목·날짜헤더 불필요)
 const PROMPT_EXTRACT = `당신은 경제·시사 뉴스레터 기사 추출 전문가입니다.
@@ -412,19 +425,6 @@ const PROMPT_CONSOLIDATE = `당신은 경제·시사 뉴스레터 전문 에디�
 
 // 하위 호환용
 const SUMMARY_PROMPT = PROMPT_EXTRACT;
-
-
-const TODAY = (() => {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}.${m}.${day}`;
-})();
-const TODAY_KO = (() => {
-  const d = new Date();
-  return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일`;
-})();
 
 
 
