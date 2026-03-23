@@ -682,12 +682,18 @@ async function analyzeAll() {
         if (currentAI === "openai") {
           const key = getOpenAIKey();
           if (!key) { openKeyModal(); break; }
-          await callOpenAIStream(key, f.b64, f.mimeType, PROMPT_EXTRACT, onChunk, signal);
+          await Promise.race([
+            await callOpenAIStream(key, f.b64, f.mimeType, PROMPT_EXTRACT, onChunk, signal);,
+            new Promise((_, rej) => setTimeout(() => rej(new Error('OpenAI 90s timeout')), 90000))
+          ])
         } else {
           const key = getGeminiKey();
           if (!key) { openKeyModal(); break; }
           try {
-            await callGeminiStream(key, f.b64, f.mimeType, PROMPT_EXTRACT, onChunk, signal);
+            await Promise.race([
+            await callGeminiStream(key, f.b64, f.mimeType, PROMPT_EXTRACT, onChunk, signal);,
+            new Promise((_, rej) => setTimeout(() => rej(new Error('Gemini 90s timeout')), 90000))
+          ])
           } catch (gErr) {
             const oKey = getOpenAIKey();
             if (oKey && (gErr.message.includes("429") || gErr.message.includes("quota") || gErr.message.includes("RESOURCE_EXHAUSTED"))) {
