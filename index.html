@@ -157,6 +157,11 @@
   <div class="api-badge">
     <div class="dot" id="api-dot"></div>
     <span id="api-txt" style="color:var(--muted)">키 미설정</span>
+    <!-- AI 선택 토글 -->
+    <div style="display:flex;gap:4px;background:rgba(255,255,255,.06);border-radius:8px;padding:3px;">
+      <button id="btn-gemini" onclick="setAI('gemini')" style="border:none;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:.74rem;font-weight:600;background:var(--accent);color:#fff;">🔵 Gemini</button>
+      <button id="btn-openai" onclick="setAI('openai')" style="border:none;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:.74rem;font-weight:600;background:transparent;color:var(--muted);">🟢 OpenAI</button>
+    </div>
     <button class="btn btn-secondary btn-sm" style="margin-top:0;" onclick="openKeyModal()">🔑 API 키 설정</button>
   </div>
 </header>
@@ -203,7 +208,7 @@
 
       <div id="loader">
         <div class="spinner"></div>
-        <div style="color:var(--muted);font-size:.85rem;">Gemini AI가 이미지를 분석 중입니다…</div>
+        <div id="loader-txt" style="color:var(--muted);font-size:.85rem;">AI가 이미지를 분석 중입니다…</div>
       </div>
 
       <div id="result-box" class="placeholder">이미지를 업로드하고 [AI 요약 생성]을 눌러주세요.
@@ -231,14 +236,14 @@
 <!-- API 키 모달 -->
 <div class="modal-bg" id="keyModal">
   <div class="modal">
-    <h2>🔑 Gemini API 키 설정</h2>
-    <p>
-      API 키는 브라우저의 localStorage에만 저장되며 외부 서버로 전송되지 않습니다.<br>
-      <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent);">Google AI Studio</a>에서 무료로 발급받을 수 있습니다.
-    </p>
-    <input type="password" id="key-input" placeholder="AIzaSy...">
+    <h2>🔑 API 키 설정</h2>
+    <p>API 키는 브라우저 localStorage에만 저장됩니다 (서버 전송 없음)</p>
+    <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:4px;">🔵 Gemini API 키 <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent);">발급</a></label>
+    <input type="password" id="key-gemini" placeholder="AIzaSy..." style="margin-bottom:12px;">
+    <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:4px;">🟢 OpenAI API 키 <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--accent);">발급</a></label>
+    <input type="password" id="key-openai" placeholder="sk-proj-..." style="margin-bottom:12px;">
     <div style="display:flex;gap:10px;">
-      <button class="btn btn-primary" style="flex:1;margin-top:0;" onclick="saveKey()">💾 저장</button>
+      <button class="btn btn-primary" style="flex:1;margin-top:0;" onclick="saveKeys()">💾 저장</button>
       <button class="btn btn-secondary" style="flex:1;margin-top:0;" onclick="closeKeyModal()">취소</button>
     </div>
   </div>
@@ -364,34 +369,58 @@ const SUMMARY_PROMPT = `━━━━━━━━━━━━━━━━━━�
 // ── 상태 ────────────────────────────────────────────────
 let currentFile = null;
 let currentResult = "";
+let currentAI = localStorage.getItem("selected_ai") || "gemini"; // 'gemini' | 'openai'
 
-function getKey(){ return localStorage.getItem("gemini_api_key") || ""; }
-function updateKeyStatus(){
-  const k = getKey();
+// ── AI 선택 토글 ──────────────────────────────────────────
+function setAI(ai) {
+  currentAI = ai;
+  localStorage.setItem("selected_ai", ai);
+  const btnG = document.getElementById("btn-gemini");
+  const btnO = document.getElementById("btn-openai");
+  if (ai === "gemini") {
+    btnG.style.background = "var(--accent)"; btnG.style.color = "#fff";
+    btnO.style.background = "transparent";   btnO.style.color = "var(--muted)";
+  } else {
+    btnO.style.background = "#22c55e";       btnO.style.color = "#fff";
+    btnG.style.background = "transparent";   btnG.style.color = "var(--muted)";
+  }
+  updateKeyStatus();
+}
+
+// ── 키 관리 ──────────────────────────────────────────────
+function getGeminiKey() { return localStorage.getItem("gemini_api_key") || ""; }
+function getOpenAIKey() { return localStorage.getItem("openai_api_key") || ""; }
+function getActiveKey() { return currentAI === "openai" ? getOpenAIKey() : getGeminiKey(); }
+
+function updateKeyStatus() {
+  const k = getActiveKey();
   const dot = document.getElementById("api-dot");
   const txt = document.getElementById("api-txt");
-  if(k){ dot.className = "dot ok"; txt.textContent = "API 연결됨"; }
-  else { dot.className = "dot"; txt.textContent = "키 미설정"; }
+  const label = currentAI === "openai" ? "OpenAI" : "Gemini";
+  if (k) { dot.className = "dot ok"; txt.textContent = label + " 연결됨"; }
+  else    { dot.className = "dot";    txt.textContent = label + " 키 미설정"; }
 }
 
 // ── API 키 모달 ──────────────────────────────────────────
-function openKeyModal(){
-  document.getElementById("key-input").value = getKey();
+function openKeyModal() {
+  document.getElementById("key-gemini").value = getGeminiKey();
+  document.getElementById("key-openai").value = getOpenAIKey();
   document.getElementById("keyModal").classList.add("show");
 }
-function closeKeyModal(){ document.getElementById("keyModal").classList.remove("show"); }
-function saveKey(){
-  const k = document.getElementById("key-input").value.trim();
-  if(!k){ toast("API 키를 입력해주세요.", "err"); return; }
-  localStorage.setItem("gemini_api_key", k);
+function closeKeyModal() { document.getElementById("keyModal").classList.remove("show"); }
+function saveKeys() {
+  const gk = document.getElementById("key-gemini").value.trim();
+  const ok = document.getElementById("key-openai").value.trim();
+  if (gk) localStorage.setItem("gemini_api_key", gk);
+  if (ok) localStorage.setItem("openai_api_key", ok);
   closeKeyModal();
   updateKeyStatus();
   toast("✅ API 키 저장됨", "ok");
 }
 
 // ── 파일 처리 ────────────────────────────────────────────
-function handleFile(e){ if(e.target.files[0]) setFile(e.target.files[0]); }
-function setFile(file){
+function handleFile(e) { if (e.target.files[0]) setFile(e.target.files[0]); }
+function setFile(file) {
   currentFile = file;
   const reader = new FileReader();
   reader.onload = ev => {
@@ -408,63 +437,63 @@ function setFile(file){
 
 // 드래그 앤 드롭
 const dz = document.getElementById("dropZone");
-dz.addEventListener("dragover", e=>{ e.preventDefault(); dz.classList.add("over"); });
-dz.addEventListener("dragleave", ()=>dz.classList.remove("over"));
-dz.addEventListener("drop", e=>{
+dz.addEventListener("dragover", e => { e.preventDefault(); dz.classList.add("over"); });
+dz.addEventListener("dragleave", () => dz.classList.remove("over"));
+dz.addEventListener("drop", e => {
   e.preventDefault(); dz.classList.remove("over");
   const f = e.dataTransfer.files[0];
-  if(f && f.type.startsWith("image/")) setFile(f);
+  if (f && f.type.startsWith("image/")) setFile(f);
 });
 
-// ── Gemini Vision 분석 ────────────────────────────────────
-async function analyzeImage(){
-  const apiKey = getKey();
-  if(!apiKey){ openKeyModal(); return; }
-  if(!currentFile) return;
-
+// ── 메인 분석 함수 (AI 선택 + fallback) ──────────────────
+async function analyzeImage() {
+  if (!currentFile) return;
   const btn = document.getElementById("analyze-btn");
   const loader = document.getElementById("loader");
   const box = document.getElementById("result-box");
+  const ltxt = document.getElementById("loader-txt");
+
   btn.disabled = true;
   loader.classList.add("show");
   box.style.display = "none";
 
+  const b64 = await fileToBase64(currentFile);
+  const mimeType = currentFile.type || "image/jpeg";
+  let result = null;
+
   try {
-    // 이미지 → base64
-    const b64 = await fileToBase64(currentFile);
-    const mimeType = currentFile.type || "image/jpeg";
-
-    const body = {
-      contents: [{
-        role: "user",
-        parts: [
-          { text: SUMMARY_PROMPT },
-          { inline_data: { mime_type: mimeType, data: b64 } }
-        ]
-      }],
-      generationConfig: { temperature: 0.4, maxOutputTokens: 8192 }
-    };
-
-    // gemini-2.0-flash-lite 직접 호출
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-
-    if(!res.ok){
-      throw new Error(data.error?.message || "API 오류");
+    if (currentAI === "openai") {
+      // ── OpenAI GPT-4o Vision ──────────────────────────
+      const key = getOpenAIKey();
+      if (!key) { openKeyModal(); loader.classList.remove("show"); box.style.display=""; btn.disabled=false; return; }
+      ltxt.textContent = "GPT-4o가 이미지를 분석 중입니다…";
+      result = await callOpenAI(key, b64, mimeType);
+    } else {
+      // ── Gemini Vision (기본) ──────────────────────────
+      const key = getGeminiKey();
+      if (!key) { openKeyModal(); loader.classList.remove("show"); box.style.display=""; btn.disabled=false; return; }
+      ltxt.textContent = "Gemini가 이미지를 분석 중입니다…";
+      try {
+        result = await callGemini(key, b64, mimeType);
+      } catch (e) {
+        // Gemini 실패 시 OpenAI로 자동 fallback
+        const oKey = getOpenAIKey();
+        if (oKey && (e.message.includes("429") || e.message.includes("quota") || e.message.includes("RESOURCE_EXHAUSTED"))) {
+          ltxt.textContent = "Gemini 한도 초과 → OpenAI로 자동 전환 중…";
+          toast("⚠️ Gemini 한도 초과, OpenAI로 전환합니다.", "");
+          result = await callOpenAI(oKey, b64, mimeType);
+          setAI("openai");
+        } else { throw e; }
+      }
     }
 
-    currentResult = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    currentResult = result;
     box.style.display = "";
     box.className = "";
     box.textContent = currentResult;
     toast("✅ 요약 완료!", "ok");
 
-  } catch(e){
+  } catch (e) {
     box.style.display = "";
     box.className = "placeholder";
     box.textContent = "❌ 오류: " + e.message;
@@ -475,27 +504,63 @@ async function analyzeImage(){
   btn.disabled = false;
 }
 
-// 이미지 → base64 변환
-function fileToBase64(file){
+// ── Gemini Vision 호출 ────────────────────────────────────
+async function callGemini(apiKey, b64, mimeType) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
+  const body = {
+    contents: [{ role: "user", parts: [
+      { text: SUMMARY_PROMPT },
+      { inline_data: { mime_type: mimeType, data: b64 } }
+    ]}],
+    generationConfig: { temperature: 0.4, maxOutputTokens: 8192 }
+  };
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || "Gemini API 오류 " + res.status);
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+}
+
+// ── OpenAI GPT-4o Vision 호출 ─────────────────────────────
+async function callOpenAI(apiKey, b64, mimeType) {
+  const url = "https://api.openai.com/v1/chat/completions";
+  const body = {
+    model: "gpt-4o",
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: SUMMARY_PROMPT },
+        { type: "image_url", image_url: { url: `data:${mimeType};base64,${b64}`, detail: "high" } }
+      ]
+    }],
+    max_tokens: 4096,
+    temperature: 0.4
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || "OpenAI API 오류 " + res.status);
+  return data.choices?.[0]?.message?.content || "";
+}
+
+// ── 이미지 → base64 ───────────────────────────────────────
+function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
-    r.onload = e => {
-      // data:image/jpeg;base64,XXX → XXX 부분만 추출
-      const b64 = e.target.result.split(",")[1];
-      resolve(b64);
-    };
+    r.onload = e => resolve(e.target.result.split(",")[1]);
     r.onerror = reject;
     r.readAsDataURL(file);
   });
 }
 
 // ── 결과 복사 ─────────────────────────────────────────────
-function copyResult(){
-  if(!currentResult){ toast("요약 결과가 없습니다.", "err"); return; }
+function copyResult() {
+  if (!currentResult) { toast("요약 결과가 없습니다.", "err"); return; }
   navigator.clipboard.writeText(currentResult)
     .then(() => toast("📋 클립보드에 복사됨! 카카오톡에 Ctrl+V 로 붙여넣기하세요.", "ok"))
     .catch(() => {
-      // fallback
       const ta = document.createElement("textarea");
       ta.value = currentResult;
       document.body.appendChild(ta);
@@ -507,17 +572,21 @@ function copyResult(){
 
 // ── 토스트 ────────────────────────────────────────────────
 let _tt;
-function toast(msg, type=""){
+function toast(msg, type = "") {
   const el = document.getElementById("toast");
   el.textContent = msg;
-  el.className = "show " + (type||"");
+  el.className = "show " + (type || "");
   clearTimeout(_tt);
   _tt = setTimeout(() => el.className = "", 3500);
 }
 
 // ── 초기화 ─────────────────────────────────────────────────
+setAI(currentAI);
 updateKeyStatus();
-if(!getKey()) setTimeout(openKeyModal, 600);
+if (!getGeminiKey() && !getOpenAIKey()) setTimeout(openKeyModal, 600);
+
+
+
 </script>
 </body>
 </html>
