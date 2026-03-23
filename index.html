@@ -522,18 +522,26 @@ async function callGemini(apiKey, b64, mimeType) {
 
 // ── OpenAI GPT-4o Vision 호출 ─────────────────────────────
 async function callOpenAI(apiKey, b64, mimeType) {
+  // 이미지 압축 (최대 1024px)
+  const compressed = await resizeImage(b64, mimeType, 1024, 0.85);
   const url = "https://api.openai.com/v1/chat/completions";
   const body = {
     model: "gpt-4o",
-    messages: [{
-      role: "user",
-      content: [
-        { type: "text", text: SUMMARY_PROMPT },
-        { type: "image_url", image_url: { url: `data:${mimeType};base64,${b64}`, detail: "high" } }
-      ]
-    }],
+    messages: [
+      {
+        role: "system",
+        content: "You are a Korean newspaper/newsletter summarizer. You MUST read all text visible in the image and produce a structured Korean summary. Never say you cannot read text from images — always extract and summarize ALL visible text."
+      },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "[중요] 이미지 속 신문/뉴스레터의 모든 기사 텍스트를 읽고 아래 형식으로 요약하세요.\n\n" + SUMMARY_PROMPT },
+          { type: "image_url", image_url: { url: `data:image/jpeg;base64,${compressed}`, detail: "high" } }
+        ]
+      }
+    ],
     max_tokens: 4096,
-    temperature: 0.4
+    temperature: 0.3
   };
   const res = await fetch(url, {
     method: "POST",
@@ -545,13 +553,33 @@ async function callOpenAI(apiKey, b64, mimeType) {
   return data.choices?.[0]?.message?.content || "";
 }
 
-// ── 이미지 → base64 ───────────────────────────────────────
+// ── 이미지 → base64 (원본) ───────────────────────────────
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = e => resolve(e.target.result.split(",")[1]);
     r.onerror = reject;
     r.readAsDataURL(file);
+  });
+}
+
+// ── 이미지 리사이즈 + 압축 (Canvas) ─────────────────────────
+function resizeImage(b64, mimeType, maxPx, quality) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > maxPx || h > maxPx) {
+        if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
+        else       { w = Math.round(w * maxPx / h); h = maxPx; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      const out = canvas.toDataURL("image/jpeg", quality).split(",")[1];
+      resolve(out);
+    };
+    img.src = `data:${mimeType};base64,${b64}`;
   });
 }
 
