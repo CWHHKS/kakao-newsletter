@@ -516,8 +516,7 @@ async function addFilesToQueue(files) {
         for (const [name, entry] of entries) {
           const blob = await entry.async("blob");
           const mimeType = name.match(/\.png$/i) ? "image/png" : "image/jpeg";
-          await waitIfPaused(); // ── 일시정지 확인
-    const b64 = await blobToBase64(blob);
+          const b64 = await blobToBase64(blob);
           fileQueue.push({ name, b64, mimeType });
         }
         toast(`✅ ZIP에서 ${entries.length}개 이미지 추출됨`, "ok");
@@ -675,6 +674,8 @@ async function analyzeAll() {
       box.scrollTop = box.scrollHeight;
     };
 
+    
+    await waitIfPaused(); // ⏸ 일시정지 대기
     for (let attempt = 0; attempt <= 2; attempt++) {
       if (signal.aborted) break;
       try {
