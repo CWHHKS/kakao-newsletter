@@ -1125,7 +1125,7 @@ if (!getGeminiKey() && !getOpenAIKey()) setTimeout(openKeyModal, 600);
 async function testAPIConnection() {
   const key = currentAI === 'openai' ? getOpenAIKey() : getGeminiKey();
   if (!key) { toast('API 키를 먼저 입력하세요.', 'error'); return; }
-  const box = document.getElementById('resultBox');
+  const box = document.getElementById('result-box');
   box.textContent = 'API 연결 테스트 중...';
   box.style.display = '';
   try {
