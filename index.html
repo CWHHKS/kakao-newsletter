@@ -604,18 +604,12 @@ function togglePause() {
   }
 }
 
-// ── 분석 완전 중단 (기존 기능 유지) ────────
+// ── 분석 완전 중단 ────────────────────────────
 function stopAnalysis() {
   isPaused = false;
   if (resumeResolve) { resumeResolve(); resumeResolve = null; }
   if (abortController) { abortController.abort(); }
-}
-
-function stopAnalysis() {
-  if (abortController) {
-    abortController.abort();
-    toast("🛑 분석을 중단했습니다.", "");
-  }
+  toast("🛑 분석을 중단했습니다.", "");
 }
 
 // ── 분석 종료 후 UI 복원 ──────────────────────────────────
@@ -711,7 +705,10 @@ async function analyzeAll() {
             if (oKey && (gErr.message.includes("429") || gErr.message.includes("quota") || gErr.message.includes("RESOURCE_EXHAUSTED"))) {
               ltxt.textContent = "Gemini 한도 초과 → OpenAI로 전환…";
               toast("⚠️ Gemini 한도 초과, OpenAI로 전환합니다.", "");
-              await callOpenAIStream(oKey, f.b64, f.mimeType, PROMPT_EXTRACT, onChunk, signal);
+              await Promise.race([
+                callOpenAIStream(oKey, f.b64, f.mimeType, PROMPT_EXTRACT, onChunk, signal),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('OpenAI fallback 30s timeout')), 30000))
+              ]);
               setAI("openai");
             } else throw gErr;
           }
@@ -743,7 +740,7 @@ async function analyzeAll() {
     extractedParts.push(partText.trim());
         // ── 실시간 누적 표시 ──
         const _isSpecial = partText.includes('[SPECIAL_SUMMARY]');
-        box.textContent = `✅ ${extractedParts.length}/${files.length}장 분석됨${_isSpecial ? ' [📌 특수 이미지 감지]' : ''}\n\n` + extractedParts.join('\n\n---\n\n');
+        box.textContent = `✅ ${extractedParts.length}/${total}장 분석됨${_isSpecial ? ' [📌 특수 이미지 감지]' : ''}\n\n` + extractedParts.join('\n\n---\n\n');
         box.scrollTop = box.scrollHeight;
     statuses[i] = "done";
     renderQueue([...statuses]);
