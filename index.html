@@ -684,7 +684,7 @@ async function analyzeAll() {
           if (!key) { openKeyModal(); break; }
           await Promise.race([
             callOpenAIStream(key, f.b64, f.mimeType, PROMPT_EXTRACT, onChunk, signal),
-            new Promise((_, rej) => setTimeout(() => rej(new Error('OpenAI 90s timeout')), 90000))
+            new Promise((_, rej) => setTimeout(() => rej(new Error('OpenAI 30s timeout')), 30000))
           ])
         } else {
           const key = getGeminiKey();
@@ -692,7 +692,7 @@ async function analyzeAll() {
           try {
             await Promise.race([
             callGeminiStream(key, f.b64, f.mimeType, PROMPT_EXTRACT, onChunk, signal),
-            new Promise((_, rej) => setTimeout(() => rej(new Error('Gemini 90s timeout')), 90000))
+            new Promise((_, rej) => setTimeout(() => rej(new Error('Gemini 30s timeout')), 30000))
           ])
           } catch (gErr) {
             const oKey = getOpenAIKey();
@@ -706,6 +706,10 @@ async function analyzeAll() {
         }
         break;
       } catch (retryErr) {
+        // 오류 메시지를 화면에 즉시 표시
+        box.textContent = `⚠️ 이미지 ${i+1}/${total} 오류: ${retryErr.message}\n재시도 중 (${attempt+1}/3)...\n\n` + extractedParts.join('\n\n---\n\n');
+        box.scrollTop = box.scrollHeight;
+        console.error('[Phase1 Error]', retryErr);
         if (retryErr.name === "AbortError") throw retryErr;
         if (attempt < 2) {
           ltxt.textContent = `재시도 중… (${attempt+1}/2)`;
