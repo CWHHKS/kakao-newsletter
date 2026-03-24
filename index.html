@@ -683,7 +683,7 @@ async function analyzeAll() {
           const key = getOpenAIKey();
           if (!key) { openKeyModal(); break; }
           await Promise.race([
-            await callOpenAIStream(key, f.b64, f.mimeType, PROMPT_EXTRACT, onChunk, signal);,
+            callOpenAIStream(key, f.b64, f.mimeType, PROMPT_EXTRACT, onChunk, signal),
             new Promise((_, rej) => setTimeout(() => rej(new Error('OpenAI 90s timeout')), 90000))
           ])
         } else {
@@ -691,7 +691,7 @@ async function analyzeAll() {
           if (!key) { openKeyModal(); break; }
           try {
             await Promise.race([
-            await callGeminiStream(key, f.b64, f.mimeType, PROMPT_EXTRACT, onChunk, signal);,
+            callGeminiStream(key, f.b64, f.mimeType, PROMPT_EXTRACT, onChunk, signal),
             new Promise((_, rej) => setTimeout(() => rej(new Error('Gemini 90s timeout')), 90000))
           ])
           } catch (gErr) {
