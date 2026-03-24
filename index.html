@@ -202,6 +202,11 @@
     </div>
     <button class="btn btn-secondary btn-sm" style="margin-top:0;" onclick="openKeyModal()">🔑 API 키 설정</button>
   </div>
+  <!-- 버전 표시 -->
+  <div style="position:absolute;top:4px;right:8px;font-size:0.6rem;color:#6b7280;text-align:right;line-height:1.4;">
+    <div>이전: v2025.03.23 (PROMPT v2)</div>
+    <div style="color:#4f8ef7;">현재: v2026.03.24 (실시간표시+OCR+일시정지)</div>
+  </div>
 </header>
 
 <div class="container">
@@ -580,17 +585,20 @@ async function waitIfPaused() {
 // ── 중단/재개 토글 버튼 ────────────────────
 function togglePause() {
   const btn = document.getElementById('stop-btn');
+  const loader = document.getElementById('loader');
   if (!isPaused) {
     // → 일시정지
     isPaused = true;
     btn.textContent = '▶ 진행';
     btn.style.background = '#22c55e';
-    toast('⏸ 분석이 일시정지 되었습니다. [진행] 버튼을 누르면 재개됩니다.', '');
+    if (loader) loader.classList.remove('show'); // 스피너 정지
+    toast('⏸ 분석 일시정지. [진행] 버튼으로 재개합니다.', '');
   } else {
     // → 재개
     isPaused = false;
     btn.textContent = '⏸ 중단';
     btn.style.background = '#f59e0b';
+    if (loader) loader.classList.add('show'); // 스피너 재시작
     if (resumeResolve) { resumeResolve(); resumeResolve = null; }
     toast('▶ 분석을 재개합니다...', 'success');
   }
@@ -623,6 +631,9 @@ function finishAnalysis(btn, cbtn, loader, stopBtn) {
 async function analyzeAll() {
   if (!fileQueue.length) return;
 
+  // ★ 핵심 수정: 분석 시작 시 isPaused 초기화 (이전 세션 상태 리셋)
+  isPaused = false;
+  if (resumeResolve) { resumeResolve(); resumeResolve = null; }
   abortController = new AbortController();
   const signal = abortController.signal;
 
