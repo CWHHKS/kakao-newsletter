@@ -198,6 +198,7 @@
     <div style="display:flex;gap:4px;background:rgba(255,255,255,.06);border-radius:8px;padding:3px;">
       <button id="btn-gemini" onclick="setAI('gemini')" style="border:none;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:.74rem;font-weight:600;background:var(--accent);color:#fff;">🔵 Gemini</button>
       <button id="btn-openai" onclick="setAI('openai')" style="border:none;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:.74rem;font-weight:600;background:transparent;color:var(--muted);">🟢 OpenAI</button>
+      <button onclick="testAPIConnection()" style="border:none;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:600;background:#f59e0b;color:#000;margin-left:4px;">🔌 연결테스트</button>
     </div>
     <button class="btn btn-secondary btn-sm" style="margin-top:0;" onclick="openKeyModal()">🔑 API 키 설정</button>
   </div>
@@ -1118,6 +1119,53 @@ if (!getGeminiKey() && !getOpenAIKey()) setTimeout(openKeyModal, 600);
 
 
 
+
+
+// ── API 연결 테스트 ─────────────────────────────────
+async function testAPIConnection() {
+  const key = currentAI === 'openai' ? getOpenAIKey() : getGeminiKey();
+  if (!key) { toast('API 키를 먼저 입력하세요.', 'error'); return; }
+  const box = document.getElementById('resultBox');
+  box.textContent = 'API 연결 테스트 중...';
+  box.style.display = '';
+  try {
+    if (currentAI === 'openai') {
+      const res = await Promise.race([
+        fetch('https://api.openai.com/v1/models', {
+          headers: { 'Authorization': 'Bearer ' + key }
+        }),
+        new Promise(function(_, r){ setTimeout(function(){ r(new Error('Timeout')); }, 10000); })
+      ]);
+      const data = await res.json();
+      if (res.ok) {
+        box.textContent = 'OpenAI 연결 성공! (' + (data.data ? data.data.length : '?') + '개 모델)\n크레딧 정상이면 분석이 가능합니다.';
+        toast('OpenAI 연결 성공!', 'success');
+      } else {
+        var msg = data.error ? (data.error.code + ': ' + data.error.message) : JSON.stringify(data);
+        box.textContent = 'OpenAI 오류 [' + res.status + ']\n' + msg + '\n' +
+          (res.status === 401 ? '→ API 키 오류' : res.status === 429 ? '→ 크레딧 부족 또는 요금 한도 초과' : '');
+        toast('OpenAI ' + res.status + ' 오류', 'error');
+      }
+    } else {
+      var url = 'https://generativelanguage.googleapis.com/v1beta/models?key=' + key;
+      const res = await Promise.race([
+        fetch(url),
+        new Promise(function(_, r){ setTimeout(function(){ r(new Error('Timeout')); }, 10000); })
+      ]);
+      const data = await res.json();
+      if (res.ok) {
+        box.textContent = 'Gemini 연결 성공! ' + (data.models ? data.models.length : '?') + '개 모델 사용 가능';
+        toast('Gemini 연결 성공!', 'success');
+      } else {
+        box.textContent = 'Gemini 오류 [' + res.status + ']\n' + JSON.stringify(data.error || data);
+        toast('Gemini ' + res.status + ' 오류', 'error');
+      }
+    }
+  } catch(e) {
+    box.textContent = '연결 실패: ' + e.message;
+    toast('연결 실패: ' + e.message, 'error');
+  }
+}
 </script>
 </body>
 </html>
